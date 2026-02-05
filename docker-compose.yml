@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.24.1
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "50051:50051"  # gRPC
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'  # We'll use Azure OpenAI for embeddings via Verba
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  verba:
+    image: ghcr.io/weaviate/verba:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      WEAVIATE_URL_VERBA: http://weaviate:8080
+      OPENAI_API_TYPE: azure
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT_CH}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_KEY}
+      AZURE_OPENAI_API_VERSION: "2024-02-15-preview"
+      # Deployment names - adjust to match your Azure deployments
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_EMBEDDING_DEPLOYMENT:-text-embedding-ada-002}
+      AZURE_OPENAI_MODEL_DEPLOYMENT: ${AZURE_MODEL_DEPLOYMENT:-gpt-4}
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    volumes:
+      - ./data/processed:/app/data  # Mount processed docs for easy ingestion
+
+volumes:
+  weaviate_data:
