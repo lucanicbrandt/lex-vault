@@ -1,7 +1,18 @@
 'use client';
 
+/**
+ * ResultCard Component
+ * 
+ * Individual search result card displaying:
+ * - Document title and metadata
+ * - Relevance score visualization
+ * - Highlighted snippet
+ * - Match type indicator
+ * - Action buttons
+ */
+
 import { FileText, Calendar, Tag, ExternalLink, Copy, CheckCircle2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,16 +23,13 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import type { SearchResult } from '@/types';
+import type { SearchResult, DocumentType } from '@/types';
 
-interface ResultCardProps {
-  result: SearchResult;
-  isSelected?: boolean;
-  onSelect?: () => void;
-  onViewDocument?: () => void;
-}
+// ============================================================================
+// Constants
+// ============================================================================
 
-const documentTypeLabels: Record<string, string> = {
+const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   contract: 'Vertrag',
   correspondence: 'Korrespondenz',
   court_decision: 'Gerichtsentscheid',
@@ -30,61 +38,163 @@ const documentTypeLabels: Record<string, string> = {
   other: 'Sonstiges',
 };
 
-const matchTypeBadges: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
-  semantic: { label: 'Semantisch', variant: 'secondary' },
-  keyword: { label: 'Exakt', variant: 'outline' },
-  both: { label: 'Hybrid', variant: 'default' },
+const DOCUMENT_TYPE_COLORS: Record<DocumentType, string> = {
+  contract: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  correspondence: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+  court_decision: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  legislation: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  memo: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  other: 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400',
 };
 
-export function ResultCard({ result, isSelected, onSelect, onViewDocument }: ResultCardProps) {
+const MATCH_TYPE_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline'; description: string }> = {
+  semantic: { 
+    label: 'Semantisch', 
+    variant: 'secondary',
+    description: 'Konzeptioneller Treffer basierend auf Bedeutung'
+  },
+  keyword: { 
+    label: 'Exakt', 
+    variant: 'outline',
+    description: 'Exakter Wort-/Phrasentreffer'
+  },
+  both: { 
+    label: 'Hybrid', 
+    variant: 'default',
+    description: 'Treffer sowohl für Bedeutung als auch exakte Begriffe'
+  },
+};
+
+// ============================================================================
+// Component Props
+// ============================================================================
+
+interface ResultCardProps {
+  /** The search result to display */
+  result: SearchResult;
+  /** Whether this card is currently selected */
+  isSelected?: boolean;
+  /** Callback when the card is clicked */
+  onSelect?: () => void;
+  /** Callback when "View in document" is clicked */
+  onViewDocument?: () => void;
+  /** Result rank (1-indexed) for accessibility */
+  rank?: number;
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Format a date string to Swiss locale.
+ */
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('de-CH', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Format file size to human-readable string.
+ */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Get score color based on value.
+ */
+function getScoreColor(score: number): string {
+  const percentage = score * 100;
+  if (percentage >= 80) {
+    return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+  }
+  if (percentage >= 60) {
+    return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+  }
+  return 'bg-muted text-muted-foreground';
+}
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export const ResultCard = memo(function ResultCard({ 
+  result, 
+  isSelected, 
+  onSelect, 
+  onViewDocument,
+  rank 
+}: ResultCardProps) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopyCitation = async () => {
-    const citation = `${result.document.title}${result.articleRef ? `, ${result.articleRef}` : ''} (S. ${result.pageNumbers.join(', ')})`;
-    await navigator.clipboard.writeText(citation);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('de-CH', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  /**
+   * Copy citation to clipboard.
+   */
+  const handleCopyCitation = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const citation = result.articleRef
+      ? `${result.document.title}, ${result.articleRef} (S. ${result.pageNumbers.join(', ')})`
+      : `${result.document.title} (S. ${result.pageNumbers.join(', ')})`;
+    
+    try {
+      await navigator.clipboard.writeText(citation);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      console.error('Failed to copy to clipboard');
+    }
   };
 
   const scorePercentage = Math.round(result.score * 100);
-  const matchBadge = matchTypeBadges[result.matchType];
+  const matchConfig = MATCH_TYPE_CONFIG[result.matchType];
+  const docTypeColor = DOCUMENT_TYPE_COLORS[result.document.type];
+  const docTypeLabel = DOCUMENT_TYPE_LABELS[result.document.type] ?? result.document.type;
 
   return (
     <TooltipProvider>
       <Card
         className={cn(
-          'cursor-pointer transition-all hover:shadow-md',
-          isSelected && 'ring-2 ring-primary'
+          'cursor-pointer transition-all hover:shadow-md focus-within:ring-2 focus-within:ring-primary',
+          isSelected && 'ring-2 ring-primary shadow-md'
         )}
         onClick={onSelect}
+        role="article"
+        aria-label={`Suchergebnis ${rank ?? ''}: ${result.document.title}`}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect?.();
+          }
+        }}
       >
         <CardContent className="p-4">
           {/* Header Row */}
           <div className="mb-3 flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                <FileText className="h-5 w-5 text-muted-foreground" />
+            <div className="flex items-start gap-3 min-w-0">
+              {/* Document Icon */}
+              <div className={cn(
+                'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+                docTypeColor
+              )}>
+                <FileText className="h-5 w-5" />
               </div>
-              <div className="min-w-0">
-                <h3 className="font-medium leading-tight text-foreground line-clamp-1">
+              
+              {/* Title & Meta */}
+              <div className="min-w-0 flex-1">
+                <h3 className="font-medium leading-tight text-foreground line-clamp-2">
                   {result.document.title}
                 </h3>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{documentTypeLabels[result.document.type] || result.document.type}</span>
+                  <span>{docTypeLabel}</span>
                   <span>•</span>
                   <span>{result.document.pageCount} Seiten</span>
                   <span>•</span>
@@ -95,20 +205,25 @@ export function ResultCard({ result, isSelected, onSelect, onViewDocument }: Res
 
             {/* Score & Match Type */}
             <div className="flex shrink-0 items-center gap-2">
-              <Badge variant={matchBadge.variant} className="text-xs">
-                {matchBadge.label}
-              </Badge>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant={matchConfig.variant} className="text-xs">
+                    {matchConfig.label}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{matchConfig.description}</p>
+                </TooltipContent>
+              </Tooltip>
+              
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
                     className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold',
-                      scorePercentage >= 80
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : scorePercentage >= 60
-                          ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                          : 'bg-muted text-muted-foreground'
+                      'flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold',
+                      getScoreColor(result.score)
                     )}
+                    aria-label={`Relevanz: ${scorePercentage}%`}
                   >
                     {scorePercentage}
                   </div>
@@ -153,12 +268,17 @@ export function ResultCard({ result, isSelected, onSelect, onViewDocument }: Res
           {/* Tags */}
           {result.document.tags.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-1.5">
-              {result.document.tags.map((tag) => (
+              {result.document.tags.slice(0, 4).map((tag) => (
                 <Badge key={tag} variant="secondary" className="text-xs">
                   <Tag className="mr-1 h-3 w-3" />
                   {tag}
                 </Badge>
               ))}
+              {result.document.tags.length > 4 && (
+                <Badge variant="secondary" className="text-xs">
+                  +{result.document.tags.length - 4}
+                </Badge>
+              )}
             </div>
           )}
 
@@ -169,11 +289,9 @@ export function ResultCard({ result, isSelected, onSelect, onViewDocument }: Res
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopyCitation();
-                  }}
+                  onClick={handleCopyCitation}
                   className="gap-1.5"
+                  aria-label={copied ? 'Zitat kopiert' : 'Zitat kopieren'}
                 >
                   {copied ? (
                     <>
@@ -210,4 +328,4 @@ export function ResultCard({ result, isSelected, onSelect, onViewDocument }: Res
       </Card>
     </TooltipProvider>
   );
-}
+});

@@ -1,7 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { Calendar, Filter, Tag, FileType, User, X } from 'lucide-react';
+/**
+ * SearchFilters Component
+ * 
+ * Filter controls for search results:
+ * - Document type (multi-select)
+ * - Matter/case (multi-select)
+ * - Tags (multi-select)
+ * - Date range
+ */
+
+import { useState, useEffect } from 'react';
+import { Calendar, Filter, Tag, FileType, Briefcase, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -15,9 +25,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useSearchStore } from '@/stores/search';
+import { getAllTags, getAllMatters } from '@/lib/mock-data';
 import type { DocumentType } from '@/types';
 
-const documentTypes: { value: DocumentType; label: string }[] = [
+// ============================================================================
+// Constants
+// ============================================================================
+
+const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
   { value: 'contract', label: 'Vertrag' },
   { value: 'correspondence', label: 'Korrespondenz' },
   { value: 'court_decision', label: 'Gerichtsentscheid' },
@@ -26,29 +41,30 @@ const documentTypes: { value: DocumentType; label: string }[] = [
   { value: 'other', label: 'Sonstiges' },
 ];
 
-// Mock data - replace with actual data from API
-const availableMatters = [
-  { id: '2024-001', label: 'Meier vs. Müller' },
-  { id: '2024-002', label: 'Immobilienkauf Zürich' },
-  { id: '2024-003', label: 'Arbeitsrecht Beratung' },
-  { id: '2023-045', label: 'Erbschaftssache Schmidt' },
-];
-
-const availableTags = [
-  'Dringend',
-  'Wichtig',
-  'Archiv',
-  'In Prüfung',
-  'Mietrecht',
-  'Arbeitsrecht',
-  'Vertragsrecht',
-];
+// ============================================================================
+// Component
+// ============================================================================
 
 export function SearchFilters() {
   const { filters, updateFilter, clearFilters } = useSearchStore();
-  const [dateFrom, setDateFrom] = useState(filters.dateFrom || '');
-  const [dateTo, setDateTo] = useState(filters.dateTo || '');
+  
+  // Local state for date inputs
+  const [dateFrom, setDateFrom] = useState(filters.dateFrom ?? '');
+  const [dateTo, setDateTo] = useState(filters.dateTo ?? '');
 
+  // Get available tags and matters from the mock data
+  const availableTags = getAllTags();
+  const availableMatters = getAllMatters();
+
+  // Sync local date state with store
+  useEffect(() => {
+    setDateFrom(filters.dateFrom ?? '');
+    setDateTo(filters.dateTo ?? '');
+  }, [filters.dateFrom, filters.dateTo]);
+
+  /**
+   * Count active filters for the summary badge.
+   */
   const activeFilterCount = [
     filters.documentTypes?.length ?? 0,
     filters.matters?.length ?? 0,
@@ -57,30 +73,42 @@ export function SearchFilters() {
     filters.dateTo ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
+  /**
+   * Toggle document type in the filter.
+   */
   const handleDocumentTypeToggle = (type: DocumentType, checked: boolean) => {
-    const current = filters.documentTypes || [];
+    const current = filters.documentTypes ?? [];
     const updated = checked 
       ? [...current, type] 
       : current.filter((t) => t !== type);
     updateFilter('documentTypes', updated.length > 0 ? updated : undefined);
   };
 
+  /**
+   * Toggle matter in the filter.
+   */
   const handleMatterToggle = (matter: string, checked: boolean) => {
-    const current = filters.matters || [];
+    const current = filters.matters ?? [];
     const updated = checked 
       ? [...current, matter] 
       : current.filter((m) => m !== matter);
     updateFilter('matters', updated.length > 0 ? updated : undefined);
   };
 
+  /**
+   * Toggle tag in the filter.
+   */
   const handleTagToggle = (tag: string, checked: boolean) => {
-    const current = filters.tags || [];
+    const current = filters.tags ?? [];
     const updated = checked 
       ? [...current, tag] 
       : current.filter((t) => t !== tag);
     updateFilter('tags', updated.length > 0 ? updated : undefined);
   };
 
+  /**
+   * Handle date range changes.
+   */
   const handleDateChange = (type: 'from' | 'to', value: string) => {
     if (type === 'from') {
       setDateFrom(value);
@@ -91,12 +119,28 @@ export function SearchFilters() {
     }
   };
 
+  /**
+   * Clear a specific filter type.
+   */
+  const clearSpecificFilter = (filterKey: keyof typeof filters) => {
+    updateFilter(filterKey, undefined);
+    if (filterKey === 'dateFrom') setDateFrom('');
+    if (filterKey === 'dateTo') setDateTo('');
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* Document Type Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className={cn(
+              'gap-2',
+              (filters.documentTypes?.length ?? 0) > 0 && 'border-primary'
+            )}
+          >
             <FileType className="h-4 w-4" />
             Dokumenttyp
             {(filters.documentTypes?.length ?? 0) > 0 && (
@@ -109,7 +153,7 @@ export function SearchFilters() {
         <DropdownMenuContent align="start" className="w-48">
           <DropdownMenuLabel>Dokumenttyp</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {documentTypes.map(({ value, label }) => (
+          {DOCUMENT_TYPES.map(({ value, label }) => (
             <DropdownMenuCheckboxItem
               key={value}
               checked={filters.documentTypes?.includes(value) ?? false}
@@ -124,8 +168,15 @@ export function SearchFilters() {
       {/* Matter Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
-            <User className="h-4 w-4" />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className={cn(
+              'gap-2',
+              (filters.matters?.length ?? 0) > 0 && 'border-primary'
+            )}
+          >
+            <Briefcase className="h-4 w-4" />
             Mandat
             {(filters.matters?.length ?? 0) > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5">
@@ -137,22 +188,35 @@ export function SearchFilters() {
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuLabel>Mandat / Akte</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {availableMatters.map(({ id, label }) => (
-            <DropdownMenuCheckboxItem
-              key={id}
-              checked={filters.matters?.includes(id) ?? false}
-              onCheckedChange={(checked) => handleMatterToggle(id, checked)}
-            >
-              <span className="truncate">{label}</span>
-            </DropdownMenuCheckboxItem>
-          ))}
+          {availableMatters.length === 0 ? (
+            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+              Keine Mandate verfügbar
+            </div>
+          ) : (
+            availableMatters.map(({ id, label }) => (
+              <DropdownMenuCheckboxItem
+                key={id}
+                checked={filters.matters?.includes(id) ?? false}
+                onCheckedChange={(checked) => handleMatterToggle(id, checked)}
+              >
+                <span className="truncate">{label}</span>
+              </DropdownMenuCheckboxItem>
+            ))
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
       {/* Tags Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className={cn(
+              'gap-2',
+              (filters.tags?.length ?? 0) > 0 && 'border-primary'
+            )}
+          >
             <Tag className="h-4 w-4" />
             Tags
             {(filters.tags?.length ?? 0) > 0 && (
@@ -162,25 +226,38 @@ export function SearchFilters() {
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuContent align="start" className="w-48 max-h-64 overflow-y-auto">
           <DropdownMenuLabel>Tags</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {availableTags.map((tag) => (
-            <DropdownMenuCheckboxItem
-              key={tag}
-              checked={filters.tags?.includes(tag) ?? false}
-              onCheckedChange={(checked) => handleTagToggle(tag, checked)}
-            >
-              {tag}
-            </DropdownMenuCheckboxItem>
-          ))}
+          {availableTags.length === 0 ? (
+            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+              Keine Tags verfügbar
+            </div>
+          ) : (
+            availableTags.map((tag) => (
+              <DropdownMenuCheckboxItem
+                key={tag}
+                checked={filters.tags?.includes(tag) ?? false}
+                onCheckedChange={(checked) => handleTagToggle(tag, checked)}
+              >
+                {tag}
+              </DropdownMenuCheckboxItem>
+            ))
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
       {/* Date Range Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className={cn(
+              'gap-2',
+              (filters.dateFrom || filters.dateTo) && 'border-primary'
+            )}
+          >
             <Calendar className="h-4 w-4" />
             Zeitraum
             {(filters.dateFrom || filters.dateTo) && (
@@ -195,28 +272,55 @@ export function SearchFilters() {
           <DropdownMenuSeparator />
           <div className="space-y-3 pt-2">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Von</label>
+              <label 
+                htmlFor="date-from" 
+                className="text-xs font-medium text-muted-foreground"
+              >
+                Von
+              </label>
               <Input
+                id="date-from"
                 type="date"
                 value={dateFrom}
                 onChange={(e) => handleDateChange('from', e.target.value)}
                 className="h-8"
+                max={dateTo || undefined}
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Bis</label>
+              <label 
+                htmlFor="date-to" 
+                className="text-xs font-medium text-muted-foreground"
+              >
+                Bis
+              </label>
               <Input
+                id="date-to"
                 type="date"
                 value={dateTo}
                 onChange={(e) => handleDateChange('to', e.target.value)}
                 className="h-8"
+                min={dateFrom || undefined}
               />
             </div>
+            {(dateFrom || dateTo) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => {
+                  clearSpecificFilter('dateFrom');
+                  clearSpecificFilter('dateTo');
+                }}
+              >
+                Zeitraum löschen
+              </Button>
+            )}
           </div>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Clear Filters */}
+      {/* Clear All Filters */}
       {activeFilterCount > 0 && (
         <Button
           variant="ghost"
@@ -227,6 +331,14 @@ export function SearchFilters() {
           <X className="h-4 w-4" />
           Filter zurücksetzen ({activeFilterCount})
         </Button>
+      )}
+
+      {/* Active Filters Summary (shown on larger screens) */}
+      {activeFilterCount > 0 && (
+        <div className="hidden lg:flex items-center gap-1 ml-2 text-xs text-muted-foreground">
+          <Filter className="h-3 w-3" />
+          <span>{activeFilterCount} Filter aktiv</span>
+        </div>
       )}
     </div>
   );
